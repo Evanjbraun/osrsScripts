@@ -1,0 +1,237 @@
+package main;
+
+import com.sun.deploy.panel.RuleSetViewerDialog;
+import org.dreambot.api.methods.Calculations;
+import org.dreambot.api.methods.filter.Filter;
+import org.dreambot.api.methods.map.Area;
+import org.dreambot.api.script.AbstractScript;
+import org.dreambot.api.script.Category;
+import org.dreambot.api.script.ScriptManifest;
+import org.dreambot.api.script.listener.InventoryListener;
+import org.dreambot.api.wrappers.interactive.NPC;
+import org.dreambot.api.wrappers.items.GroundItem;
+import org.dreambot.api.utilities.Timer;
+
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+
+
+@ScriptManifest(category = Category.COMBAT, name = "autoCollector", author = "EJB", version = 1.2, description = "Testing")
+public class autoCollector extends AbstractScript  {
+
+    // ##########################################
+    //              GLOBALS
+    // ##########################################
+    private int state = 0;
+    public final int cowhide = 1739;
+    Area cowZone  = new Area (3263, 3293, 3255, 3257, 0);
+    public int randomChance = Calculations.random(1,10);
+    public boolean shouldLoot;
+    private Timer timer = new Timer();
+    private int goldCollected;
+    private long XP;
+
+
+
+
+
+    // ##########################################
+    //              START
+    // ##########################################
+
+    @Override
+    public void onStart() {
+        createGUI();
+
+        state = 0;
+
+    }
+    
+
+    // ##########################################
+    //               EXIT
+    // ##########################################
+
+    @Override
+    public void onExit() {
+        log("onExit -- Stopping... ");
+        stop();
+
+    }
+
+    @Override
+    public int onLoop() {
+        // ##########################################
+        //              STATE
+        // ##########################################
+        if (state == -1) {
+            // do nothing and quit
+            onExit();
+        }
+        else if (state == 0) {
+            attack();
+        }
+        else if (state == 1) {
+            loot();
+        }
+        else if (state == 2) {
+            bank();
+        }
+        else if (state == 3) {
+            walkBank();
+        }
+        else if (state == 4) {
+            walkCows();
+        }
+
+        return Calculations.random(500,765);
+    }
+
+        // ##########################################
+        //              FIND NPCs
+        // ##########################################
+        public static final Filter<NPC> findCow = new Filter<NPC>() {
+            public String cow = "Cow";
+            public String calf = "Cow calf";
+            @Override
+            public boolean match(NPC npc) {
+                if (npc == null) {
+                    return false;
+                }
+                return (npc.getName().equals(cow) || npc.getName().equals(calf)) && !npc.isHealthBarVisible();
+            }
+        };
+
+         // ##########################################
+         //              METHODS
+         // ##########################################
+        public void attack(){
+         if (cowZone.contains(getLocalPlayer()) && !getInventory().isFull()) { //in zone and empty inv
+             NPC cow = getNpcs().closest(findCow);
+             if (!getLocalPlayer().isInCombat() && cow != null) { //player not in combat, cow is real
+                 sleep(Calculations.random(988,1344));
+                 if (!cow.isOnScreen()) { //cow not on screen, rotate
+                     log("cow not on screen. rotate");
+                     getCamera().rotateToEntity(cow);
+                 }
+                 else {
+                     if (randomChance > 7) {
+                         log("random camera triggered");
+                         getCamera().rotateTo(Calculations.random(2570), Calculations.random(getClient().getLowestPitch(), 382));
+                     }
+                 }
+                 log("attacking new cow...");
+                 cow.interact("Attack");
+                 if (getLocalPlayer().isInCombat()) {
+                     log("still in combat...");
+                 }
+                 else {
+                     sleep(Calculations.random(993,1431));
+                     log("combat done. switch state");
+                     state = 1;
+                     log("state switched to LOOTING");
+                     onLoop();
+                 }
+             }
+         }
+         else {
+             if (getInventory().isFull()) { // if inv is full walk to bank
+                 state = 3;
+                 log("full inv. walking back to bank");
+             }
+             else { // if not in cow area, walk to cow area
+                 state = 4;
+                 log("not in area. walking back to area");
+             }
+             onLoop();
+         }
+
+        }
+
+        public void loot() {
+            GroundItem hides = getGroundItems().closest(cowhide);
+         
+            log("Loot Phase start");
+            if (getLocalPlayer().isInCombat()) {
+                log("Still in combat. waiting...");
+            }
+            else {
+                log("player not in combat. looting...");
+
+                if (!getInventory().isFull()) {
+                    if (hides.distance(getLocalPlayer()) < 4 && hides.exists()) {
+                        sleep(Calculations.random(632,1193));
+                        hides.interact("Take");
+                        sleepUntil(() -> !getLocalPlayer().isMoving(), Calculations.random(2044, 3033));
+                        log("Hide collected.");
+                    }
+                    else {
+                        log("no hides detected. back to attacking");
+                        state =0;
+                        onLoop();
+                    }
+                    log("EXCEPTION E");
+                }
+                else { //inv full
+                    log("inv full in looting loop. back to attacking");
+                    state =0;
+                }
+                state = 0;
+                onLoop();
+            }
+
+        }
+
+        public void bank(){
+            log("Banking");
+            getBank().open();
+            sleepUntil(()-> getBank().isOpen(), Calculations.random(2000,2500));
+            if (getBank().isOpen()) {
+                log("Depositing...");
+                getBank().depositAllItems();
+                getBank().close();
+                sleepUntil(()-> !getBank().isOpen(), Calculations.random(1000,2000));
+                log("closed bank wait complete");
+                state =  4; //walk to cows
+            }
+            else {
+                log("walk failed. walking to bank again.");
+                state = 3; //walk to bank again
+            }
+        }
+
+        public void walkBank() {
+            while (getLocalPlayer().distance(getBank().getClosestBankLocation().getCenter()) > 4) {
+                getWalking().walk(getBank().getClosestBankLocation().getCenter());
+                log("walking to bank");
+                sleepUntil(()-> getWalking().getDestination().distance() < Calculations.random(5, 7) , Calculations.random(3400, 4250));
+                log("sleep complete.");
+                if (randomChance > 6) {
+                    log("rotate camera chance");
+                    getCamera().rotateTo(Calculations.random(2570), Calculations.random(getClient().getLowestPitch(), 382));
+                }
+
+            }
+            log("Exit walk loop, bank");
+            state = 2; //bank state
+        }
+
+        public void walkCows() {
+            log("Walking to cows.");
+            while (!cowZone.contains(getLocalPlayer())) {
+                if (getWalking().walk(cowZone.getRandomTile())) {
+                    sleep(Calculations.random(960,1934));
+                    if (Calculations.random(1,10) > 8) {
+                        log("rotate camera chance");
+                        getCamera().rotateTo(Calculations.random(2970), Calculations.random(getClient().getLowestPitch(), 362));
+                    }
+                }}
+            log("made it to cows. attack time");
+            state = 0; //attack state
+        }
+
+        
+    }
