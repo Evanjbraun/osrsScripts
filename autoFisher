@@ -1,0 +1,377 @@
+package Main;
+
+
+import org.dreambot.api.methods.Calculations;
+import org.dreambot.api.methods.filter.Filter;
+import org.dreambot.api.methods.map.Area;
+import org.dreambot.api.methods.skills.Skill;
+import org.dreambot.api.script.AbstractScript;
+import org.dreambot.api.script.Category;
+import org.dreambot.api.script.ScriptManifest;
+import org.dreambot.api.script.listener.AdvancedMessageListener;
+import org.dreambot.api.script.listener.MessageListener;
+import org.dreambot.api.script.listener.PaintListener;
+import org.dreambot.api.wrappers.interactive.NPC;
+import org.dreambot.api.utilities.Timer;
+import org.dreambot.api.wrappers.widgets.message.Message;
+
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.ItemEvent;
+
+@ScriptManifest(category = Category.FISHING, name = "autoFish", author = "EJB", version = 1.0, description = "Fisher script")
+public class autoFisher extends AbstractScript implements PaintListener{
+
+    public String FishingSpot;
+    public String FishActionName;
+    public String Equipment;
+    private static boolean startScript = false;
+    private static boolean powerDrop = false;
+    private Timer timer = new Timer();
+    Area fishZone = new Area();
+    private JFrame frame;
+    private NPC currentFishingSpot;
+    public Filter<NPC> fishingSpotFind;
+    private int GoldperFish = 0;
+    public String fishArea;
+    public String fishType;
+    public int fishCaught;
+
+    @Override
+    public void onStart() {
+        log("starting...");
+        getSkillTracker().start();
+        createGUI();
+        while(!startScript){
+            sleep(1000);
+        }
+
+
+    }
+
+    @Override
+    public void onMessage(Message message) {
+        if(message.getMessage().toLowerCase().contains("you catch a")) {
+            fishCaught++;
+        }
+    }
+    @Override
+    public int onLoop() { // 50% chance to skip text with space or else just let it go
+        int errorTick = 0;
+        if (errorTick >= 2) {
+            onExit();
+            log("error limit reached. exiting.");
+        }
+        State state = getState();
+        log("Currently: "+state);
+
+        switch(state) {
+
+            case BANK:
+
+                getBank().depositAllExcept(Equipment, "Feather");
+                getBank().close();
+                sleepUntil(()-> getBank().close(), 3044);
+                return Calculations.random(125,525);
+
+            case FIND_NEW_FISHING_SPOT:
+                if (!getLocalPlayer().isAnimating()) {
+                    sleep(Calculations.random(1003, 4044));
+                }//realistic human notice time
+                if (!currentFishingSpot.isOnScreen()) {
+                    getCamera().rotateToEntity(currentFishingSpot);
+                }
+                else {
+                    if (Calculations.random(1,10) > 7) {
+                        getCamera().rotateTo(Calculations.random(2270), Calculations.random(getClient().getLowestPitch(), 312));
+                    }
+                }
+
+                currentFishingSpot.interact(FishActionName);
+                sleepUntil(()-> !getLocalPlayer().isMoving(), Calculations.random(5441,6005));
+                return Calculations.random(55,435);
+
+            case WALK_TO_FISHING_SPOT:
+
+                while (!fishZone.contains(getLocalPlayer())) {
+                    getWalking().walk((fishZone).getCenter());
+                    sleep(Calculations.random(2993,4233));
+                }
+
+                sleepUntil(()-> !getLocalPlayer().isMoving(), 4011);
+                return Calculations.random(185,355);
+
+            case WALK_TO_BANK:
+                sleep(Calculations.random(933,1211));
+                while (getLocalPlayer().distance(getBank().getClosestBankLocation().getCenter()) > 4) {
+                    getWalking().walk(getBank().getClosestBankLocation().getCenter());
+                    sleep(Calculations.random(2304,4204));
+                }
+                getBank().open();
+                return Calculations.random(175,422);
+
+            case FISHING: // if 50% chance to move mouse off screen or just rotate camera.
+                if (Calculations.random(1,100) > 98) {
+                    log("mouse off screen activated");
+                    getMouse().moveMouseOutsideScreen();
+                }
+                else if (Calculations.random(1,10000) > 9906) {
+                    log("Random camera activated");
+                    getCamera().rotateTo(Calculations.random(2470), Calculations.random(getClient().getLowestPitch(), 362));
+                }
+                return Calculations.random(85,524);
+            case POWER_DROP:
+                sleep(Calculations.random(1033,5403));
+                getInventory().dropAllExcept(Equipment,"Feather");
+
+                return Calculations.random(89,296);
+            case ERROR:
+                getWalking().walk((fishZone).getRandomTile());
+                sleep(Calculations.random(3025,5035));
+                log("error case");
+                errorTick++;
+        }
+
+        return Calculations.random(49,193);
+    }
+
+    private static enum State {
+        FIND_NEW_FISHING_SPOT,
+        FISHING,
+        BANK,
+        WALK_TO_BANK,
+        WALK_TO_FISHING_SPOT,
+        POWER_DROP,
+        ERROR
+    }
+    private State getState() {
+        if (getInventory().isFull() && getLocalPlayer().distance(getBank().getClosestBankLocation().getCenter()) > 4 ) {
+            if (powerDrop == false) {
+            return State.WALK_TO_BANK;
+            }
+            else {
+                return State.POWER_DROP;
+            }
+        }
+        else if (getInventory().contains(Equipment) && !getInventory().isFull() && !getLocalPlayer().isAnimating() && (currentFishingSpot = getNpcs().closest(fishingSpotFind))!= null && getLocalPlayer().distance(currentFishingSpot = getNpcs().closest(fishingSpotFind)) < 9 ) {
+            sleep(Calculations.random(1033,1903));
+            return State.FIND_NEW_FISHING_SPOT;
+        }
+        else if (getInventory().isFull() && getBank().isOpen()) {
+            return State.BANK;
+        }
+        else if (!getInventory().isFull() && getLocalPlayer().isAnimating() && currentFishingSpot != null) {
+            sleep(Calculations.random(933,1403));
+            return State.FISHING;
+        }
+        else if (getLocalPlayer().distance((currentFishingSpot = getNpcs().closest(fishingSpotFind))) > 14) {
+            return State.WALK_TO_FISHING_SPOT;
+        }
+        else {
+            log("error ");
+            return State.ERROR;
+        }
+    }
+
+
+
+    @Override
+    public void onExit() {
+        super.onExit();
+    }
+
+    @Override
+    public void onPaint(Graphics g) {
+        g.setColor(Color.GREEN);
+        g.setFont(new Font("Georgia", Font.BOLD, 14));
+        g.drawString("Time Running: " + timer.formatTime(), 10, 260);
+
+        g.drawString(
+                "Fishing lvl/XP: " + getSkillTracker().getStartLevel(Skill.FISHING) +"+" + getSkillTracker().getGainedLevels(Skill.FISHING) + " | " + "("+
+                         getSkillTracker().getGainedExperience(Skill.FISHING) + ")",
+                10, 280);
+        g.drawString(
+                "Fishing XP/hr: " + " ("
+                        + getSkillTracker().getGainedExperiencePerHour(Skill.FISHING) + ")",
+                10, 300);
+        g.drawString(
+                "Fish Caught: " + "(" + fishCaught
+                        + ")", 10,
+                320);
+        g.drawString(
+                "Fish per hr: " + "(" + timer.getHourlyRate(fishCaught)
+                        + ")", 10,
+                340);
+
+    }
+
+    private void createGUI() {
+        frame = new JFrame();
+        frame.setBounds(100, 100, 450, 300);
+        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        frame.setVisible(true);
+
+        JLabel lblMoofisher = new JLabel("autoFish");
+        lblMoofisher.setForeground(new Color(255, 153, 102));
+        lblMoofisher.setFont(new Font("Rockwell Extra Bold", Font.BOLD, 17));
+
+        JLabel lblFishArea = new JLabel("Fish Area:");
+
+        JLabel lblFishingFor = new JLabel("Fishing for:");
+
+        JLabel lblByMoojachi = new JLabel("by EB");
+
+        JComboBox areaBox = new JComboBox();
+        areaBox.addItem("Draynor Village");
+        areaBox.addItem("Barbarian Village");
+        areaBox.addItem("Catherby");
+        areaBox.addItem("Fishing Guild");
+        areaBox.addItem("Piscatoris Fish. Colony");
+        areaBox.setToolTipText("Select Fishing Area");
+
+        JComboBox fishingTypeBox = new JComboBox();
+        fishingTypeBox.addItem("Shrimp (Small net)");
+        fishingTypeBox.addItem("Trout (Fly Fish)");
+        fishingTypeBox.addItem("Lobster (Cage)");
+        fishingTypeBox.addItem("Swordfish/Tuna (Harpoon)");
+        fishingTypeBox.addItem("Shark (Harpoon)");
+
+        JCheckBox chckbxDropFish = new JCheckBox("Drop Fish");
+        
+        JButton btnStart = new JButton("Start");
+        btnStart.addActionListener((ActionEvent e) -> {
+            fishArea = (String)(areaBox.getSelectedItem());
+            fishType = (String)(fishingTypeBox.getSelectedItem());
+            fishingSpotFind = npc -> npc.getName().equals(FishingSpot) && npc.hasAction(FishActionName);
+            //
+            // FISH AREA
+            //
+
+            if (fishArea == "Draynor Village" ) {
+                fishZone  = new Area(3086,3230,3087,3227,0); // draynor
+            }
+            else if (fishArea =="Barbarian Village") {
+                fishZone  = new Area(3107,3434,3103,3424,0);// barb village
+            }
+            else if (fishArea =="Catherby") {
+                fishZone  = new Area(2836,3432,2862,3427,0);// cath
+            }
+            else if (fishArea =="Fishing Guild") {
+                fishZone  = new Area(3086,3230,3087,3227,0);// draynor
+            }
+            else if (fishArea =="Piscatoris Fish. Colony") {
+                fishZone  = new Area(3086,3230,3087,3227,0);// draynor
+            }
+            else{log("no fish area set");}
+
+                //
+                // FISHING TYPE
+                //
+
+                if (fishType == "Shrimp (Small net)" ) {
+                    FishActionName = "Small Net";
+                    Equipment = "Small fishing net";
+                    FishingSpot = "Fishing spot";
+
+                }
+                else if (fishType =="Trout (Fly Fish)") {
+                    FishActionName = "Lure";
+                    Equipment = "Fly fishing rod";
+                    FishingSpot = "Rod Fishing spot";
+                }
+                else if (fishType =="Lobster (Cage)") {
+                    FishActionName = "Cage";
+                    Equipment = "Lobster pot";
+                    FishingSpot = "Fishing spot";
+                }
+                else if (fishType =="Swordfish/Tuna (Harpoon)") {
+                    FishActionName = "Harpoon";
+                    Equipment = "Harpoon";
+                    //FishingSpot = "";
+
+                }
+                else if (fishType =="Shark (Harpoon)") {
+                    FishActionName = "Harpoon";
+                    Equipment = "Harpoon";
+                    //FishingSpot = "??";
+                }
+                else {log("no fish type set");}
+
+
+            if (chckbxDropFish.isSelected()) {
+                powerDrop = true;
+                GoldperFish = 0;
+            } else {
+                powerDrop = false;
+            }
+            startScript = true;
+
+            frame.dispose();
+
+        });
+
+
+
+
+
+
+        GroupLayout groupLayout = new GroupLayout(frame.getContentPane());
+        groupLayout.setHorizontalGroup(
+                groupLayout.createParallelGroup(GroupLayout.Alignment.TRAILING)
+                        .addGroup(groupLayout.createSequentialGroup()
+                                .addContainerGap(227, Short.MAX_VALUE)
+                                .addComponent(lblByMoojachi)
+                                .addGap(137))
+                        .addGroup(groupLayout.createSequentialGroup()
+                                .addContainerGap(188, Short.MAX_VALUE)
+                                .addComponent(btnStart)
+                                .addGap(183))
+                        .addGroup(GroupLayout.Alignment.LEADING, groupLayout.createSequentialGroup()
+                                .addGap(42)
+                                .addGroup(groupLayout.createParallelGroup(GroupLayout.Alignment.LEADING)
+                                        .addGroup(groupLayout.createSequentialGroup()
+                                                .addComponent(chckbxDropFish)
+                                                .addContainerGap())
+                                        .addGroup(groupLayout.createSequentialGroup()
+                                                .addGroup(groupLayout.createParallelGroup(GroupLayout.Alignment.LEADING)
+                                                        .addGroup(groupLayout.createSequentialGroup()
+                                                                .addComponent(lblFishingFor)
+                                                                .addGap(41)
+                                                                .addComponent(fishingTypeBox, 0, 159, Short.MAX_VALUE))
+                                                        .addGroup(groupLayout.createSequentialGroup()
+                                                                .addComponent(lblFishArea)
+                                                                .addGap(47)
+                                                                .addGroup(groupLayout.createParallelGroup(GroupLayout.Alignment.LEADING)
+                                                                        .addComponent(lblMoofisher, GroupLayout.DEFAULT_SIZE, 159, Short.MAX_VALUE)
+                                                                        .addComponent(areaBox, 0, 159, Short.MAX_VALUE))))
+                                                .addGap(125))))
+        );
+        groupLayout.setVerticalGroup(
+                groupLayout.createParallelGroup(GroupLayout.Alignment.LEADING)
+                        .addGroup(groupLayout.createSequentialGroup()
+                                .addGap(30)
+                                .addComponent(lblMoofisher)
+                                .addGap(1)
+                                .addComponent(lblByMoojachi)
+                                .addPreferredGap(LayoutStyle.ComponentPlacement.UNRELATED)
+                                .addGroup(groupLayout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                                        .addComponent(lblFishArea)
+                                        .addComponent(areaBox, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE))
+                                .addGap(18)
+                                .addGroup(groupLayout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                                        .addComponent(lblFishingFor)
+                                        .addComponent(fishingTypeBox, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE))
+                                .addGap(18)
+                                .addComponent(chckbxDropFish)
+                                .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED, 29, Short.MAX_VALUE)
+                                .addComponent(btnStart)
+                                .addContainerGap())
+        );
+        frame.getContentPane().setLayout(groupLayout);
+    }
+
+
+}
